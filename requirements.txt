@@ -28,6 +28,7 @@ openai-whisper==20240930
 pydantic==2.11.4
 pydantic_core==2.33.2
 python-dotenv==1.1.0
+python-multipart==0.0.20
 regex==2024.11.6
 requests==2.32.3
 setuptools==80.8.0
@@ -42,3 +43,4 @@ typing-inspection==0.4.0
 typing_extensions==4.13.2
 urllib3==2.4.0
 uvicorn==0.34.2
+whisper==1.1.10
