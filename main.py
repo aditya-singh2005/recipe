@@ -1,27 +1,39 @@
+import os
+import uuid
+import re
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-import whisper
 import uvicorn
-import os
 from dotenv import load_dotenv
 from openai import OpenAI
 from gtts import gTTS
-import uuid
-import re
+from transformers import pipeline
 
-os.makedirs("audio", exist_ok=True)
+# Setup directories
+BASE_DIR = os.path.dirname(__file__)
+AUDIO_DIR = os.path.join(BASE_DIR, "audio")
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 # Load environment variables
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
 groq_api_key = os.getenv("GROQ_API_KEY")
-print(f"API Key loaded: {'Yes' if groq_api_key else 'No - Key not found!'}")
+print(f"Groq API Key loaded: {'Yes' if groq_api_key else 'No - Key not found!'}")
 
+# Initialize OpenAI (Groq) client
 client = OpenAI(
     api_key=groq_api_key,
     base_url="https://api.groq.com/openai/v1"
 )
 
+# Initialize Whisper ASR pipeline
+asr_pipeline = pipeline(
+    "automatic-speech-recognition",
+    model="openai/whisper-base",
+    device="cpu"
+)
+
+# FastAPI app setup
 app = FastAPI()
 
 app.add_middleware(
@@ -32,15 +44,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create audio folder if not exists
-BASE_DIR = os.path.dirname(__file__)
-AUDIO_DIR = os.path.join(BASE_DIR, "audio")
-os.makedirs(AUDIO_DIR, exist_ok=True)
+sessions = {}
 
-model = whisper.load_model("base")
-sessions = {}  # In-memory session storage
+def whisper_transcribe(audio_path: str) -> str:
+    result = asr_pipeline(audio_path)
+    return result["text"]
 
-def ask_llama(prompt):
+def ask_llama(prompt: str) -> str:
     try:
         response = client.chat.completions.create(
             model="llama3-8b-8192",
@@ -53,10 +63,9 @@ def ask_llama(prompt):
     except Exception as e:
         return f"Error calling Groq: {str(e)}"
 
-def parse_recipe(text):
+def parse_recipe(text: str):
     ingredients = ""
     steps = []
-
     lines = text.split("\n")
     current_section = None
     for line in lines:
@@ -67,7 +76,6 @@ def parse_recipe(text):
         elif line.lower().startswith("steps"):
             current_section = "steps"
             continue
-        
         if current_section == "ingredients" and line != "":
             ingredients += line + "\n"
         elif current_section == "steps" and line != "":
@@ -78,20 +86,18 @@ def parse_recipe(text):
             steps.append(step_text)
     return ingredients.strip(), steps
 
-def text_to_speech(text, filename):
-    tts = gTTS(text)
+def text_to_speech(text: str, filename: str):
+    tts = gTTS(text,lang="en")
     full_path = os.path.join(AUDIO_DIR, filename)
     tts.save(full_path)
 
 @app.post("/recipe/start")
 async def start_recipe(file: UploadFile = File(None), prompt: str = Form(None)):
     if file:
-        audio_data = await file.read()
-        audio_path = os.path.join(BASE_DIR, "temp_audio.mp3")
+        audio_path = os.path.join(AUDIO_DIR, "temp_audio.mp3")
         with open(audio_path, "wb") as f:
-            f.write(audio_data)
-        result = model.transcribe(audio_path)
-        user_prompt = result["text"]
+            f.write(await file.read())
+        user_prompt = whisper_transcribe(audio_path)
     elif prompt:
         user_prompt = prompt
     else:
@@ -124,12 +130,10 @@ async def next_step(session_id: str = Form(...), file: UploadFile = File(None)):
         return {"error": "Invalid session ID"}
 
     if file:
-        audio_data = await file.read()
-        audio_path = os.path.join("audio", "temp_next_audio.mp3")
+        audio_path = os.path.join(AUDIO_DIR, "temp_next_audio.mp3")
         with open(audio_path, "wb") as f:
-            f.write(audio_data)
-        result = model.transcribe(audio_path)
-        user_text = result["text"].strip().lower()
+            f.write(await file.read())
+        user_text = whisper_transcribe(audio_path).strip().lower()
     else:
         return {"error": "No audio file provided"}
 
