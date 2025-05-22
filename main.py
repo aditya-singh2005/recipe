@@ -91,6 +91,11 @@ def text_to_speech(text: str, filename: str):
     full_path = os.path.join(AUDIO_DIR, filename)
     tts.save(full_path)
 
+@app.get("/")
+def read_root():
+    return {"message": "Olive.ai is running!"}
+
+
 @app.post("/recipe/start")
 async def start_recipe(file: UploadFile = File(None), prompt: str = Form(None)):
     if file:
@@ -177,4 +182,6 @@ def get_audio(filename: str):
     return FileResponse(audio_path, media_type="audio/mpeg")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
+
