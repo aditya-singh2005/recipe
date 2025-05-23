@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from gtts import gTTS
 from transformers import pipeline
+from pydub import AudioSegment
+
 
 # Setup directories
 BASE_DIR = os.path.dirname(__file__)
@@ -99,10 +101,16 @@ def read_root():
 @app.post("/recipe/start")
 async def start_recipe(file: UploadFile = File(None), prompt: str = Form(None)):
     if file:
-        audio_path = os.path.join(AUDIO_DIR, "temp_audio.mp3")
-        with open(audio_path, "wb") as f:
+        input_path = os.path.join(AUDIO_DIR, "temp_input_blob")
+        wav_path = os.path.join(AUDIO_DIR, "temp_audio.wav")
+        with open(input_path, "wb") as f:
             f.write(await file.read())
-        user_prompt = whisper_transcribe(audio_path)
+
+        # Convert to .wav
+        audio = AudioSegment.from_file(input_path)
+        audio.export(wav_path, format="wav")
+
+        user_prompt = whisper_transcribe(wav_path)
     elif prompt:
         user_prompt = prompt
     else:
@@ -135,10 +143,16 @@ async def next_step(session_id: str = Form(...), file: UploadFile = File(None)):
         return {"error": "Invalid session ID"}
 
     if file:
-        audio_path = os.path.join(AUDIO_DIR, "temp_next_audio.mp3")
-        with open(audio_path, "wb") as f:
+        input_path = os.path.join(AUDIO_DIR, "temp_next_input_blob")
+        wav_path = os.path.join(AUDIO_DIR, "temp_next_audio.wav")
+        with open(input_path, "wb") as f:
             f.write(await file.read())
-        user_text = whisper_transcribe(audio_path).strip().lower()
+
+        # Convert to .wav
+        audio = AudioSegment.from_file(input_path)
+        audio.export(wav_path, format="wav")
+
+        user_text = whisper_transcribe(wav_path).strip().lower()
     else:
         return {"error": "No audio file provided"}
 
@@ -179,7 +193,10 @@ async def next_step(session_id: str = Form(...), file: UploadFile = File(None)):
 @app.get("/audio/{filename}")
 def get_audio(filename: str):
     audio_path = os.path.join(AUDIO_DIR, filename)
+    if not os.path.exists(audio_path):
+        return {"error": "Audio file not found"}
     return FileResponse(audio_path, media_type="audio/mpeg")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
