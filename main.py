@@ -115,3 +115,7 @@ async def download_audio(filename: str):
         return FileResponse(file_path, media_type="audio/mpeg", filename=filename)
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/")
+async def root():
+    return {"message": "✅ FastAPI server is running"}
