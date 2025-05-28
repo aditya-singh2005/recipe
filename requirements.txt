@@ -42,9 +42,8 @@ pure-eval==0.2.2
 pydantic==2.11.5
 pydantic_core==2.33.2
 Pygments==2.16.1
-python-dotenv==1.1.0
-python-multipart==0.0.20
-pywin32==305.1
+python-dotenv==1.2.0
+python-multipart==0.0.6
 PyYAML==6.0.2
 pyzmq==25.1.0
 regex==2024.11.6
