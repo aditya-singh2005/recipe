@@ -3,6 +3,7 @@ import shutil
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi import HTTPException
 from transformers import pipeline
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -40,30 +41,34 @@ asr_pipeline = pipeline(
     device=-1
 )
 
+
 @app.post("/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
     if not groq_api_key:
-        return JSONResponse(status_code=500, content={"error": "GROQ_API_KEY not set in environment variables."})
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not set in environment variables.")
+
+    if not file:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    if not file.filename.endswith((".mp3", ".wav", ".m4a")):
+        raise HTTPException(status_code=400, detail="Unsupported file format. Use mp3, wav, or m4a.")
 
     try:
-        if not file.filename.endswith((".mp3", ".wav", ".m4a")):
-            return JSONResponse(status_code=400, content={"error": "Unsupported file format. Use mp3, wav, or m4a."})
-
         session_id = uuid.uuid4().hex
         uploaded_path = os.path.join(AUDIO_DIR, f"{session_id}_{file.filename}")
 
         print("📥 Saving uploaded file...")
         with open(uploaded_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        file.file.close()
-        print(f"✅ File saved: {uploaded_path}")
 
+        print(f"✅ File saved: {uploaded_path}")
         print("🎧 Starting transcription...")
         result = asr_pipeline(uploaded_path, generate_kwargs={"language": "en"})
         transcription = result.get("text", "")
-        print("📝 Transcription:", transcription)
 
+        print("📝 Transcription:", transcription)
         print("🧠 Sending transcription to Llama3...")
+
         messages = [
             {
                 "role": "system",
@@ -89,11 +94,10 @@ async def transcribe_audio(file: UploadFile = File(...)):
         tts.save(audio_response_path)
         print(f"📁 gTTS audio saved: {audio_response_path}")
 
-        print("🧹 Cleaning up uploaded file...")
+        # Cleanup
+        file.file.close()
         os.remove(uploaded_path)
-        print(f"🗑️ Deleted uploaded file: {uploaded_path}")
 
-        print("📤 Sending JSON response with download link and session ID")
         return JSONResponse({
             "session_id": session_id,
             "transcription": transcription,
@@ -103,7 +107,8 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
     except Exception as e:
         print("❌ Error in /transcribe route:", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/download-audio")
 async def download_audio(filename: str):
